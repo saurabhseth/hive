@@ -1775,20 +1775,11 @@ public class StatsRulesProcFactory {
           if (numAttr > 1 && conf.getBoolVar(HiveConf.ConfVars.HIVE_STATS_CORRELATED_MULTI_KEY_JOINS)) {
             denom = Collections.max(distinctVals);
             denomUnmatched = denom - ndvsUnmatched.get(distinctVals.indexOf(denom));
-          } else if (numAttr > numParent) {
+          } else {
             // To avoid denominator getting larger and aggressively reducing
             // number of rows, we will ease out denominator.
             denom = StatsUtils.addWithExpDecay(distinctVals);
             denomUnmatched = denom - StatsUtils.addWithExpDecay(ndvsUnmatched);
-          } else {
-            for (Long l : distinctVals) {
-              denom = StatsUtils.safeMult(denom, l);
-            }
-            long tempDenom = 1;
-            for (Long l : ndvsUnmatched) {
-              tempDenom = StatsUtils.safeMult(tempDenom, l);
-            }
-            denomUnmatched = denom - tempDenom;
           }
         }
 
@@ -2653,6 +2644,16 @@ public class StatsRulesProcFactory {
         long dataSize = StatsUtils.safeMult(parentStats.getDataSize(), udtfFactor);
         st.setNumRows(numRows);
         st.setDataSize(dataSize);
+
+        List<ColStatistics> colStatsList = st.getColumnStats();
+        if(colStatsList != null) {
+          for (ColStatistics colStats : colStatsList) {
+            colStats.setNumFalses((long) (colStats.getNumFalses() * udtfFactor));
+            colStats.setNumTrues((long) (colStats.getNumTrues() * udtfFactor));
+            colStats.setNumNulls((long) (colStats.getNumNulls() * udtfFactor));
+          }
+          st.setColumnStats(colStatsList);
+        }
 
         if (LOG.isDebugEnabled()) {
           LOG.debug("[0] STATS-" + uop.toString() + ": " + st.extendedToString());
