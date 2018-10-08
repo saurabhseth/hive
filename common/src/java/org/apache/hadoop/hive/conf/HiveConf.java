@@ -612,6 +612,9 @@ public class HiveConf extends Configuration {
     HIVE_MAPJOIN_TESTING_NO_HASH_TABLE_LOAD("hive.mapjoin.testing.no.hash.table.load", false, "internal use only, true when in testing map join",
         true),
 
+    HIVE_IN_REPL_TEST_FILES_SORTED("hive.in.repl.test.files.sorted", false,
+      "internal usage only, set to true if the file listing is required in sorted order during bootstrap load", true),
+
     LOCALMODEAUTO("hive.exec.mode.local.auto", false,
         "Let Hive determine whether to run in local mode automatically"),
     LOCALMODEMAXBYTES("hive.exec.mode.local.auto.inputbytes.max", 134217728L,
@@ -2281,6 +2284,10 @@ public class HiveConf extends Configuration {
     HIVE_SHARED_WORK_EXTENDED_OPTIMIZATION("hive.optimize.shared.work.extended", true,
         "Whether to enable shared work extended optimizer. The optimizer tries to merge equal operators\n" +
         "after a work boundary after shared work optimizer has been executed. Requires hive.optimize.shared.work\n" +
+        "to be set to true. Tez only."),
+    HIVE_SHARED_WORK_REUSE_MAPJOIN_CACHE("hive.optimize.shared.work.mapjoin.cache.reuse", true,
+        "When shared work optimizer is enabled, whether we should reuse the cache for the broadcast side\n" +
+        "of mapjoin operators that share same broadcast input. Requires hive.optimize.shared.work\n" +
         "to be set to true. Tez only."),
     HIVE_COMBINE_EQUIVALENT_WORK_OPTIMIZATION("hive.combine.equivalent.work.optimization", true, "Whether to " +
             "combine equivalent work objects during physical optimization.\n This optimization looks for equivalent " +
