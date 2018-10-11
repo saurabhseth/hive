@@ -15,29 +15,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.hive.accumulo;
 
-import org.apache.hadoop.hive.ql.QTestArguments;
-import org.apache.hadoop.hive.ql.QTestUtil;
+package org.apache.hadoop.hive.hbase;
+
+import static org.junit.Assert.assertTrue;
+import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
+import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
+import org.junit.Test;
+import org.mockito.Mockito;
 
 /**
- * AccumuloQTestUtil initializes Accumulo-specific test fixtures.
+ *  This is a simple test to make sure HiveHBaseTableOutputFormat implements HiveOutputFormat for HBase tables.
  */
-public class AccumuloQTestUtil extends QTestUtil {
+public class TestHiveHBaseTableOutputFormat {
 
-  public AccumuloQTestUtil(String outDir, String logDir, MiniClusterType miniMr,
-      AccumuloTestSetup setup, String initScript, String cleanupScript) throws Exception {
-
-    super(
-        QTestArguments.QTestArgumentsBuilder.instance()
-          .withOutDir(outDir)
-          .withLogDir(logDir)
-          .withClusterType(miniMr)
-          .withConfDir(null)
-          .withInitScript(initScript)
-          .withCleanupScript(cleanupScript)
-          .withLlapIo(false)
-          .withQTestSetup(setup)
-          .build());
+  @Test
+  public void testInstanceOfHiveHBaseTableOutputFormat() {
+    HiveHBaseTableOutputFormat hBaseOutputFormat = Mockito.mock(HiveHBaseTableOutputFormat.class);
+    assertTrue(hBaseOutputFormat instanceof TableOutputFormat);
+    assertTrue(hBaseOutputFormat instanceof HiveOutputFormat);
   }
 }
