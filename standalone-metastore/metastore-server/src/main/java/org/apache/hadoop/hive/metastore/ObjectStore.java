@@ -3255,15 +3255,12 @@ public class ObjectStore implements RawStore, Configurable {
       throw new NoSuchObjectException(TableName.getQualified(catName, dbName, tableName)
           + " table not found");
     }
-    String partNameMatcher = MetaStoreUtils.makePartNameMatcher(table, part_vals);
+    // size is known since it contains dbName, catName, tblName and partialRegex pattern
+    Map<String, String> params = new HashMap<>(4);
+    String filter = getJDOFilterStrForPartitionVals(table, part_vals, params);
     Query query = queryWrapper.query = pm.newQuery(MPartition.class);
-    StringBuilder queryFilter = new StringBuilder("table.database.name == dbName");
-    queryFilter.append(" && table.database.catalogName == catName");
-    queryFilter.append(" && table.tableName == tableName");
-    queryFilter.append(" && partitionName.matches(partialRegex)");
-    query.setFilter(queryFilter.toString());
-    query.declareParameters("java.lang.String dbName, java.lang.String catName, "
-        + "java.lang.String tableName, java.lang.String partialRegex");
+    query.setFilter(filter);
+    query.declareParameters(makeParameterDeclarationString(params));
     if (max_parts >= 0) {
       // User specified a row limit, set it on the Query
       query.setRange(0, max_parts);
@@ -3272,7 +3269,7 @@ public class ObjectStore implements RawStore, Configurable {
       query.setResult(resultsCol);
     }
 
-    return (Collection) query.executeWithArray(dbName, catName, tableName, partNameMatcher);
+    return (Collection) query.executeWithMap(params);
   }
 
   @Override
@@ -3360,32 +3357,27 @@ public class ObjectStore implements RawStore, Configurable {
   }
 
   // This code is only executed in JDO code path, not from direct SQL code path.
-  private List<MPartition> listMPartitionsWithProjection(String catName, String dbName, String tblName, int max,
-      QueryWrapper queryWrapper, List<String> fieldNames) throws MetaException {
+  private List<MPartition> listMPartitionsWithProjection(QueryWrapper queryWrapper,
+      List<String> fieldNames, String jdoFilter, Map<String, Object> params) throws MetaException {
     boolean success = false;
     List<MPartition> mparts = null;
     try {
       openTransaction();
       LOG.debug("Executing listMPartitionsWithProjection");
-      dbName = normalizeIdentifier(dbName);
-      tblName = normalizeIdentifier(tblName);
-      Query query = queryWrapper.query = pm.newQuery(MPartition.class,
-          "table.tableName == t1 && table.database.name == t2 && table.database.catalogName == t3");
-      query.declareParameters("java.lang.String t1, java.lang.String t2, java.lang.String t3");
+      Query query = queryWrapper.query = pm.newQuery(MPartition.class, jdoFilter);
+      String parameterDeclaration = makeParameterDeclarationStringObj(params);
+      query.declareParameters(parameterDeclaration);
       query.setOrdering("partitionName ascending");
-      if (max >= 0) {
-        query.setRange(0, max);
-      }
       if (fieldNames == null || fieldNames.isEmpty()) {
         // full fetch of partitions
-        mparts = (List<MPartition>) query.execute(tblName, dbName, catName);
+        mparts = (List<MPartition>) query.executeWithMap(params);
         pm.retrieveAll(mparts);
       } else {
         // fetch partially filled partitions using result clause
         query.setResult(Joiner.on(',').join(fieldNames));
         // if more than one fields are in the result class the return type is List<Object[]>
         if (fieldNames.size() > 1) {
-          List<Object[]> results = (List<Object[]>) query.execute(tblName, dbName, catName);
+          List<Object[]> results = (List<Object[]>) query.executeWithMap(params);
           mparts = new ArrayList<>(results.size());
           for (Object[] row : results) {
             MPartition mpart = new MPartition();
@@ -3398,7 +3390,7 @@ public class ObjectStore implements RawStore, Configurable {
           }
         } else {
           // only one field is requested, return type is List<Object>
-          List<Object> results = (List<Object>) query.execute(tblName, dbName, catName);
+          List<Object> results = (List<Object>) query.executeWithMap(params);
           mparts = new ArrayList<>(results.size());
           for (Object row : results) {
             MPartition mpart = new MPartition();
@@ -3581,7 +3573,6 @@ public class ObjectStore implements RawStore, Configurable {
 
     return result.intValue();
   }
-
   /**
    * Gets partition names from the table via ORM (JDOQL) name filter.
    * @param dbName Database name.
@@ -3648,12 +3639,14 @@ public class ObjectStore implements RawStore, Configurable {
     return candidateCds;
   }
 
-  private ObjectPair<Query, Map<String, String>> getPartQueryWithParams(
-      String catName, String dbName, String tblName, List<String> partNames) {
+  private String getJDOFilterStrForPartitionNames(String catName, String dbName, String tblName,
+      List<String> partNames, Map params) {
     StringBuilder sb = new StringBuilder("table.tableName == t1 && table.database.name == t2 &&" +
         " table.database.catalogName == t3 && (");
+    params.put("t1", normalizeIdentifier(tblName));
+    params.put("t2", normalizeIdentifier(dbName));
+    params.put("t3", normalizeIdentifier(catName));
     int n = 0;
-    Map<String, String> params = new HashMap<>();
     for (Iterator<String> itr = partNames.iterator(); itr.hasNext();) {
       String pn = "p" + n;
       n++;
@@ -3664,12 +3657,30 @@ public class ObjectStore implements RawStore, Configurable {
     }
     sb.setLength(sb.length() - 4); // remove the last " || "
     sb.append(')');
+    return sb.toString();
+  }
+
+  private String getJDOFilterStrForPartitionVals(Table table, List<String> vals,
+      Map params) throws MetaException {
+    String partNameMatcher = MetaStoreUtils.makePartNameMatcher(table, vals, ".*");
+    StringBuilder queryFilter = new StringBuilder("table.database.name == dbName");
+    queryFilter.append(" && table.database.catalogName == catName");
+    queryFilter.append(" && table.tableName == tableName");
+    queryFilter.append(" && partitionName.matches(partialRegex)");
+    params.put("dbName", table.getDbName());
+    params.put("catName", table.getCatName());
+    params.put("tableName", table.getTableName());
+    params.put("partialRegex", partNameMatcher);
+    return queryFilter.toString();
+  }
+
+  private ObjectPair<Query, Map<String, String>> getPartQueryWithParams(
+      String catName, String dbName, String tblName, List<String> partNames) {
     Query query = pm.newQuery();
-    query.setFilter(sb.toString());
-    LOG.debug(" JDOQL filter is {}", sb);
-    params.put("t1", normalizeIdentifier(tblName));
-    params.put("t2", normalizeIdentifier(dbName));
-    params.put("t3", normalizeIdentifier(catName));
+    Map<String, String> params = new HashMap<>();
+    String filterStr = getJDOFilterStrForPartitionNames(catName, dbName, tblName, partNames, params);
+    query.setFilter(filterStr);
+    LOG.debug(" JDOQL filter is {}", filterStr);
     query.declareParameters(makeParameterDeclarationString(params));
     return new ObjectPair<>(query, params);
   }
@@ -4040,24 +4051,69 @@ public class ObjectStore implements RawStore, Configurable {
   }
 
   @Override
-  public List<Partition> getPartitionSpecsByFilterAndProjection(String catName, String dbName,
-                                                                String tblName, List<String> fieldList,
-                                                                String includeParamKeyPattern,
-                                                                String excludeParamKeyPattern)
-      throws MetaException, NoSuchObjectException {
+  public List<Partition> getPartitionSpecsByFilterAndProjection(final Table table,
+      GetPartitionsProjectionSpec partitionsProjectSpec,
+      final GetPartitionsFilterSpec filterSpec) throws MetaException, NoSuchObjectException {
+    List<String> fieldList = null;
+    String inputIncludePattern = null;
+    String inputExcludePattern = null;
+    if (partitionsProjectSpec != null) {
+      fieldList = partitionsProjectSpec.getFieldList();
+      if (partitionsProjectSpec.isSetIncludeParamKeyPattern()) {
+        inputIncludePattern = partitionsProjectSpec.getIncludeParamKeyPattern();
+      }
+      if (partitionsProjectSpec.isSetExcludeParamKeyPattern()) {
+        inputExcludePattern = partitionsProjectSpec.getExcludeParamKeyPattern();
+      }
+    }
     if (fieldList == null || fieldList.isEmpty()) {
       // no fields are requested. Fallback to regular getPartitions implementation to return all the fields
-      return getPartitionsInternal(catName, dbName, tblName, -1, true, true);
+      return getPartitionsInternal(table.getCatName(), table.getDbName(), table.getTableName(), -1,
+          true, true);
     }
 
-    return new GetListHelper<Partition>(catName, dbName, tblName,
+    // anonymous class below requires final String objects
+    final String includeParamKeyPattern = inputIncludePattern;
+    final String excludeParamKeyPattern = inputExcludePattern;
+
+    return new GetListHelper<Partition>(table.getCatName(), table.getDbName(), table.getTableName(),
         fieldList, true, true) {
+      private final SqlFilterForPushdown filter = new SqlFilterForPushdown();
+      private ExpressionTree tree;
+
+      @Override
+      protected boolean canUseDirectSql(GetHelper<List<Partition>> ctx) throws MetaException {
+        if (filterSpec.isSetFilterMode() && filterSpec.getFilterMode().equals(PartitionFilterMode.BY_EXPR)) {
+          // if the filter mode is BY_EXPR initialize the filter and generate the expression tree
+          // if there are more than one filter string we AND them together
+          initExpressionTree();
+          return directSql.generateSqlFilterForPushdown(ctx.getTable(), tree, filter);
+        }
+        // BY_VALUES and BY_NAMES are always supported
+        return true;
+      }
+
+      private void initExpressionTree() throws MetaException {
+        StringBuilder filterBuilder = new StringBuilder();
+        int len = filterSpec.getFilters().size();
+        List<String> filters = filterSpec.getFilters();
+        for (int i = 0; i < len; i++) {
+          filterBuilder.append('(');
+          filterBuilder.append(filters.get(i));
+          filterBuilder.append(')');
+          if (i + 1 < len) {
+            filterBuilder.append(" AND ");
+          }
+        }
+        String filterStr = filterBuilder.toString();
+        tree = PartFilterExprUtil.getFilterParser(filterStr).tree;
+      }
 
       @Override
       protected List<Partition> getSqlResult(GetHelper<List<Partition>> ctx) throws MetaException {
         return directSql
-            .getPartitionSpecsUsingProjection(ctx.getTable(), ctx.partitionFields, includeParamKeyPattern,
-                excludeParamKeyPattern);
+            .getPartitionsUsingProjectionAndFilterSpec(ctx.getTable(), ctx.partitionFields,
+                includeParamKeyPattern, excludeParamKeyPattern, filterSpec, filter);
       }
 
       @Override
@@ -4066,11 +4122,44 @@ public class ObjectStore implements RawStore, Configurable {
         // For single-valued fields we can use setResult() to implement projection of fields but
         // JDO doesn't support multi-valued fields in setResult() so currently JDO implementation
         // fallbacks to full-partition fetch if the requested fields contain multi-valued fields
-        // TODO: Add param filtering logic
         List<String> fieldNames = PartitionProjectionEvaluator.getMPartitionFieldNames(ctx.partitionFields);
+          Map<String, Object> params = new HashMap<>();
+          String jdoFilter = null;
+          if (filterSpec.isSetFilterMode()) {
+            // generate the JDO filter string
+            switch(filterSpec.getFilterMode()) {
+            case BY_EXPR:
+              if (tree == null) {
+                // tree could be null when directSQL is disabled
+                initExpressionTree();
+              }
+              jdoFilter =
+                  makeQueryFilterString(table.getCatName(), table.getDbName(), table, tree, params,
+                      true);
+              if (jdoFilter == null) {
+                throw new MetaException("Could not generate JDO filter from given expression");
+              }
+              break;
+            case BY_NAMES:
+              jdoFilter = getJDOFilterStrForPartitionNames(table.getCatName(), table.getDbName(),
+                  table.getTableName(), filterSpec.getFilters(), params);
+              break;
+            case BY_VALUES:
+              jdoFilter = getJDOFilterStrForPartitionVals(table, filterSpec.getFilters(), params);
+              break;
+            default:
+              throw new MetaException("Unsupported filter mode " + filterSpec.getFilterMode());
+            }
+          } else {
+            // filter mode is not set create simple JDOFilterStr and params
+            jdoFilter = "table.tableName == t1 && table.database.name == t2 && table.database.catalogName == t3";
+            params.put("t1", normalizeIdentifier(tblName));
+            params.put("t2", normalizeIdentifier(dbName));
+            params.put("t3", normalizeIdentifier(catName));
+          }
         try (QueryWrapper queryWrapper = new QueryWrapper()) {
           return convertToParts(
-              listMPartitionsWithProjection(catName, dbName, tblName, -1, queryWrapper, fieldNames));
+              listMPartitionsWithProjection(queryWrapper, fieldNames, jdoFilter, params));
         }
       }
     }.run(true);
@@ -8963,21 +9052,27 @@ public class ObjectStore implements RawStore, Configurable {
         return null;
       }
 
-      MTable table = getMTable(catName, dbName, tblName);
+      Table table = getTable(catName, dbName, tblName);
       boolean isTxn = TxnUtils.isTransactionalTable(table.getParameters());
       if (isTxn && !areTxnStatsSupported) {
         return null;
       }
+      GetPartitionsFilterSpec fs = new GetPartitionsFilterSpec();
+      fs.setFilterMode(PartitionFilterMode.BY_NAMES);
+      fs.setFilters(partNames);
+      GetPartitionsProjectionSpec ps = new GetPartitionsProjectionSpec();
+      ps.setIncludeParamKeyPattern(StatsSetupConst.COLUMN_STATS_ACCURATE + '%');
+      ps.setFieldList(Lists.newArrayList("writeId", "parameters", "values"));
+      List<Partition> parts = getPartitionSpecsByFilterAndProjection(table, ps, fs);
 
       // Loop through the given "partNames" list
       // checking isolation-level-compliance of each partition column stats.
-      for (String partName : partNames) {
-        MPartition mpart = getMPartition(
-            catName, dbName, tblName, Warehouse.getPartValuesFromPartName(partName));
-        if (!isCurrentStatsValidForTheQuery(mpart, writeIdList, false)) {
-          LOG.debug("The current metastore transactional partition column statistics " +
-                  "for " + dbName + "." + tblName + "." + mpart.getPartitionName() + " is not valid " +
-                  "for the current query.");
+      for (Partition part : parts) {
+
+        if (!isCurrentStatsValidForTheQuery(part, part.getWriteId(), writeIdList, false)) {
+          String partName = Warehouse.makePartName(table.getPartitionKeys(), part.getValues());
+          LOG.debug("The current metastore transactional partition column statistics for " + dbName
+              + "." + tblName + "." + partName + " is not valid for the current query");
           return null;
         }
       }
@@ -10165,14 +10260,60 @@ public class ObjectStore implements RawStore, Configurable {
       long fromEventId = rqst.getFromEventId();
       String inputDbName = rqst.getDbName();
       String catName = rqst.isSetCatName() ? rqst.getCatName() : getDefaultCatalog(conf);
-      String queryStr = "select count(eventId) from " + MNotificationLog.class.getName()
-                + " where eventId > fromEventId && dbName == inputDbName && catalogName == catName";
+      long toEventId;
+      String paramSpecs;
+      List<Object> paramVals = new ArrayList<Object>();
+
+      // We store a catalog name in lower case in metastore and also use the same way everywhere in
+      // hive.
+      assert catName.equals(catName.toLowerCase());
+
+      // Build the query to count events, part by part
+      String queryStr = "select count(eventId) from " + MNotificationLog.class.getName();
+      // count fromEventId onwards events
+      queryStr = queryStr + " where eventId > fromEventId";
+      paramSpecs = "java.lang.Long fromEventId";
+      paramVals.add(Long.valueOf(fromEventId));
+
+      // Input database name can be a database name or a *. In the first case we add a filter
+      // condition on dbName column, but not in the second case, since a * means all the
+      // databases. In case we support more elaborate database name patterns in future, we will
+      // have to apply a method similar to getNextNotification() method of MetaStoreClient.
+      if (!inputDbName.equals("*")) {
+        // dbName could be NULL in case of transaction related events, which also need to be
+        // counted.
+        queryStr = queryStr + " && (dbName == inputDbName || dbName == null)";
+        paramSpecs = paramSpecs + ", java.lang.String inputDbName";
+        // We store a database name in lower case in metastore.
+        paramVals.add(inputDbName.toLowerCase());
+      }
+
+      // catName could be NULL in case of transaction related events, which also need to be
+      // counted.
+      queryStr = queryStr + " && (catalogName == catName || catalogName == null)";
+      paramSpecs = paramSpecs +", java.lang.String catName";
+      paramVals.add(catName);
+
+      // count events upto toEventId if specified
+      if (rqst.isSetToEventId()) {
+        toEventId = rqst.getToEventId();
+        queryStr = queryStr + " && eventId <= toEventId";
+        paramSpecs = paramSpecs + ", java.lang.Long toEventId";
+        paramVals.add(Long.valueOf(toEventId));
+      }
+
       query = pm.newQuery(queryStr);
-      query.declareParameters("java.lang.Long fromEventId, java.lang.String inputDbName," +
-          " java.lang.String catName");
-      result = (Long) query.execute(fromEventId, inputDbName, catName);
+      query.declareParameters(paramSpecs);
+      result = (Long) query.executeWithArray(paramVals.toArray());
       commited = commitTransaction();
-      return new NotificationEventsCountResponse(result.longValue());
+
+      // Cap the event count by limit if specified.
+      long  eventCount = result.longValue();
+      if (rqst.isSetLimit() && eventCount > rqst.getLimit()) {
+        eventCount = rqst.getLimit();
+      }
+
+      return new NotificationEventsCountResponse(eventCount);
     } finally {
       rollbackAndCleanup(commited, query);
     }
