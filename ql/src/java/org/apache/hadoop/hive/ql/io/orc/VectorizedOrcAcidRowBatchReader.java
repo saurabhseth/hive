@@ -358,6 +358,32 @@ public class VectorizedOrcAcidRowBatchReader
     this.vectorizedRowBatchBase = baseReader.createValue();
   }
 
+  private RecordIdentifier getRowIdFromColStats(ColumnStatistics[] colStats, boolean min, OrcSplit orcSplit) {
+    /*
+      Structure in data is like this:
+       <op, owid, writerId, rowid, cwid, <f1, ... fn>>
+      The +1 is to account for the top level struct which has a
+      ColumnStatistics object in colsStats.  Top level struct is normally
+      dropped by the Reader (I guess because of orc.impl.SchemaEvolution)
+      */
+    IntegerColumnStatistics origWriteId = (IntegerColumnStatistics)
+        colStats[OrcRecordUpdater.ORIGINAL_WRITEID + 1];
+    IntegerColumnStatistics bucketProperty = (IntegerColumnStatistics)
+        colStats[OrcRecordUpdater.BUCKET + 1];
+    IntegerColumnStatistics rowId = (IntegerColumnStatistics)
+        colStats[OrcRecordUpdater.ROW_ID + 1];
+
+    long bucketVal = min? bucketProperty.getMinimum(): bucketProperty.getMaximum();
+    //we may want to change bucketProperty from int to long in the
+    // future(across the stack) this protects the following cast to int
+    assert bucketVal <= Integer.MAX_VALUE :
+        "was bucketProper changed to a long (" +
+            bucketProperty.getMinimum() + ")?!:" + orcSplit;
+
+    return new RecordIdentifier(min? origWriteId.getMinimum(): origWriteId.getMaximum(),
+        (int) bucketVal, min? rowId.getMinimum(): rowId.getMaximum());
+  }
+
   /**
    * A given ORC reader will always process one or more whole stripes but the
    * split boundaries may not line up with stripe boundaries if the InputFormat
@@ -475,14 +501,14 @@ public class VectorizedOrcAcidRowBatchReader
     RecordIdentifier[] keyIndex = OrcRecordUpdater.parseKeyIndex(reader);
 
     if(keyIndex == null) {
-      LOG.warn("Could not find keyIndex (" + firstStripeIndex + "," +
-          lastStripeIndex + "," + stripes.size() + ")");
+      LOG.warn("Could not find keyIndex (" + firstStripeIndex + "," + lastStripeIndex + "," + stripes
+          .size() + ")");
     }
 
     if(keyIndex != null && keyIndex.length != stripes.size()) {
       LOG.warn("keyIndex length doesn't match (" +
-          firstStripeIndex + "," + lastStripeIndex + "," + stripes.size() +
-          "," + keyIndex.length + ")");
+          firstStripeIndex + "," + lastStripeIndex + "," + stripes.size() + "," +
+          keyIndex.length + ")");
       return new OrcRawRecordMerger.KeyInterval(null, null);
     }
     /**
@@ -512,29 +538,8 @@ public class VectorizedOrcAcidRowBatchReader
       if(columnStatsPresent) {
         ColumnStatistics[] colStats =
             stats.get(firstStripeIndex).getColumnStatistics();
-        /*
-        Structure in data is like this:
-         <op, owid, writerId, rowid, cwid, <f1, ... fn>>
-        The +1 is to account for the top level struct which has a
-        ColumnStatistics object in colsStats.  Top level struct is normally
-        dropped by the Reader (I guess because of orc.impl.SchemaEvolution)
-        */
-        IntegerColumnStatistics origWriteId = (IntegerColumnStatistics)
-            colStats[OrcRecordUpdater.ORIGINAL_WRITEID + 1];
-        IntegerColumnStatistics bucketProperty = (IntegerColumnStatistics)
-            colStats[OrcRecordUpdater.BUCKET + 1];
-        IntegerColumnStatistics rowId = (IntegerColumnStatistics)
-            colStats[OrcRecordUpdater.ROW_ID + 1];
-
-        //we may want to change bucketProperty from int to long in the
-        // future(across the stack) this protects the following cast to int
-        assert bucketProperty.getMinimum() <= Integer.MAX_VALUE :
-            "was bucketProper changed to a long (" +
-                bucketProperty.getMinimum() + ")?!:" + orcSplit;
-
         //this a lower bound but not necessarily greatest lower bound
-        minKey = new RecordIdentifier(origWriteId.getMinimum(),
-            (int) bucketProperty.getMinimum(), rowId.getMinimum());
+        minKey = getRowIdFromColStats(colStats, true, orcSplit);
       }
     }
 
@@ -546,24 +551,11 @@ public class VectorizedOrcAcidRowBatchReader
       if(columnStatsPresent) {
         ColumnStatistics[] colStats =
             stats.get(lastStripeIndex).getColumnStatistics();
-        IntegerColumnStatistics origWriteId = (IntegerColumnStatistics)
-            colStats[OrcRecordUpdater.ORIGINAL_WRITEID + 1];
-        IntegerColumnStatistics bucketProperty = (IntegerColumnStatistics)
-            colStats[OrcRecordUpdater.BUCKET + 1];
-        IntegerColumnStatistics rowId = (IntegerColumnStatistics)
-            colStats[OrcRecordUpdater.ROW_ID + 1];
-
-        //we may want to change bucketProperty from int to long in the
-        // future(across the stack) this protects the following cast to int
-        assert bucketProperty.getMaximum() <= Integer.MAX_VALUE :
-            "was bucketProper changed to a long (" +
-                bucketProperty.getMaximum() + ")?!:" + orcSplit;
-
         // this is an upper bound but not necessarily the least upper bound
-        maxKey = new RecordIdentifier(origWriteId.getMaximum(),
-            (int) bucketProperty.getMaximum(), rowId.getMaximum());
+        maxKey = getRowIdFromColStats(colStats, false, orcSplit);
       }
     }
+
     OrcRawRecordMerger.KeyInterval keyInterval =
         new OrcRawRecordMerger.KeyInterval(minKey, maxKey);
     LOG.info("findMinMaxKeys(): " + keyInterval +
