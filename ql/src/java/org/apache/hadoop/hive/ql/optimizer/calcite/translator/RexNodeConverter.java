@@ -337,6 +337,8 @@ public class RexNodeConverter {
       if (calciteOp.getKind() == SqlKind.CASE) {
         // If it is a case operator, we need to rewrite it
         childRexNodeLst = rewriteCaseChildren(func, childRexNodeLst);
+        // Adjust branch types by inserting explicit casts if the actual is ambigous
+        childRexNodeLst = adjustCaseBranchTypes(childRexNodeLst, retType);
       } else if (HiveExtractDate.ALL_FUNCTIONS.contains(calciteOp)) {
         // If it is a extract operator, we need to rewrite it
         childRexNodeLst = rewriteExtractDateChildren(calciteOp, childRexNodeLst);
@@ -362,6 +364,8 @@ public class RexNodeConverter {
         // This allows to be further reduced to OR, if possible
         calciteOp = SqlStdOperatorTable.CASE;
         childRexNodeLst = rewriteCoalesceChildren(func, childRexNodeLst);
+        // Adjust branch types by inserting explicit casts if the actual is ambigous
+        childRexNodeLst = adjustCaseBranchTypes(childRexNodeLst, retType);
       } else if (calciteOp == HiveToDateSqlOperator.INSTANCE) {
         childRexNodeLst = rewriteToDateChildren(childRexNodeLst);
       }
@@ -471,6 +475,36 @@ public class RexNodeConverter {
     return newChildRexNodeLst;
   }
 
+  /**
+   * Adds explicit casts if Calcite's type system could not resolve the CASE branches to a common type.
+   *
+   * Calcite is more stricter than hive w.r.t type conversions.
+   * If a CASE has branches with string/int/boolean branch types; there is no common type.
+   */
+  private List<RexNode> adjustCaseBranchTypes(List<RexNode> nodes, RelDataType retType) {
+    List<RelDataType> branchTypes = new ArrayList<>();
+    for (int i = 0; i < nodes.size(); i++) {
+      if (i % 2 == 1 || i == nodes.size() - 1) {
+        branchTypes.add(nodes.get(i).getType());
+      }
+    }
+    RelDataType commonType = cluster.getTypeFactory().leastRestrictive(branchTypes);
+    if (commonType != null) {
+      // conversion is possible; not changes are neccessary
+      return nodes;
+    }
+    List<RexNode> newNodes = new ArrayList<>();
+    for (int i = 0; i < nodes.size(); i++) {
+      RexNode node = nodes.get(i);
+      if (i % 2 == 1 || i == nodes.size() - 1) {
+        newNodes.add(cluster.getRexBuilder().makeCast(retType, node));
+      } else {
+        newNodes.add(node);
+      }
+    }
+    return newNodes;
+  }
+
   private List<RexNode> rewriteExtractDateChildren(SqlOperator op, List<RexNode> childRexNodeLst)
       throws SemanticException {
     List<RexNode> newChildRexNodeLst = new ArrayList<>(2);
@@ -509,15 +543,19 @@ public class RexNodeConverter {
     } else {
       // We need to add a cast to DATETIME Family
       if (isTimestampLevel) {
-        newChildRexNodeLst.add(
-            cluster.getRexBuilder().makeCast(cluster.getTypeFactory().createSqlType(SqlTypeName.TIMESTAMP), child));
+        newChildRexNodeLst.add(makeCast(SqlTypeName.TIMESTAMP, child));
       } else {
-        newChildRexNodeLst.add(
-            cluster.getRexBuilder().makeCast(cluster.getTypeFactory().createSqlType(SqlTypeName.DATE), child));
+        newChildRexNodeLst.add(makeCast(SqlTypeName.DATE, child));
       }
     }
 
     return newChildRexNodeLst;
+  }
+
+  private RexNode makeCast(SqlTypeName typeName, final RexNode child) {
+    RelDataType sqlType = cluster.getTypeFactory().createSqlType(typeName);
+    RelDataType nullableType = cluster.getTypeFactory().createTypeWithNullability(sqlType, true);
+    return cluster.getRexBuilder().makeCast(nullableType, child);
   }
 
   private List<RexNode> rewriteFloorDateChildren(SqlOperator op, List<RexNode> childRexNodeLst)
@@ -549,13 +587,10 @@ public class RexNodeConverter {
     List<RexNode> newChildRexNodeLst = new ArrayList<RexNode>();
     assert childRexNodeLst.size() == 1;
     RexNode child = childRexNodeLst.get(0);
-    if (SqlTypeUtil.isDatetime(child.getType()) || SqlTypeUtil.isInterval(
-            child.getType())) {
+    if (SqlTypeUtil.isDatetime(child.getType()) || SqlTypeUtil.isInterval(child.getType())) {
       newChildRexNodeLst.add(child);
     } else {
-      newChildRexNodeLst.add(
-              cluster.getRexBuilder().makeCast(cluster.getTypeFactory().createSqlType(SqlTypeName.TIMESTAMP),
-                      child));
+      newChildRexNodeLst.add(makeCast(SqlTypeName.TIMESTAMP, child));
     }
     return newChildRexNodeLst;
   }

@@ -475,16 +475,16 @@ STAGE PLANS:
                   Statistics: Num rows: 2003 Data size: 911365 Basic stats: COMPLETE Column stats: PARTIAL
                   Filter Operator
                     predicate: (key) IN ('1001', '213', '43') (type: boolean)
-                    Statistics: Num rows: 100 Data size: 45500 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 19 Data size: 8645 Basic stats: COMPLETE Column stats: PARTIAL
                     Select Operator
                       expressions: ROW__ID (type: struct<writeid:bigint,bucketid:int,rowid:bigint>), ds (type: string), hr (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                       Reduce Output Operator
                         key expressions: _col0 (type: struct<writeid:bigint,bucketid:int,rowid:bigint>)
                         sort order: +
                         Map-reduce partition columns: UDFToInteger(_col0) (type: int)
-                        Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                         value expressions: _col1 (type: string), _col2 (type: string)
             Execution mode: llap
             LLAP IO: may be used (ACID table)
@@ -494,10 +494,10 @@ STAGE PLANS:
               Select Operator
                 expressions: KEY.reducesinkkey0 (type: struct<writeid:bigint,bucketid:int,rowid:bigint>), VALUE._col0 (type: string), VALUE._col1 (type: string)
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                 File Output Operator
                   compressed: false
-                  Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                   table:
                       input format: org.apache.hadoop.hive.ql.io.orc.OrcInputFormat
                       output format: org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat
@@ -1012,16 +1012,16 @@ STAGE PLANS:
                   Statistics: Num rows: 2003 Data size: 911365 Basic stats: COMPLETE Column stats: PARTIAL
                   Filter Operator
                     predicate: (key) IN ('1001', '213', '43') (type: boolean)
-                    Statistics: Num rows: 100 Data size: 45500 Basic stats: COMPLETE Column stats: PARTIAL
+                    Statistics: Num rows: 19 Data size: 8645 Basic stats: COMPLETE Column stats: PARTIAL
                     Select Operator
                       expressions: ROW__ID (type: struct<writeid:bigint,bucketid:int,rowid:bigint>), ds (type: string), hr (type: string)
                       outputColumnNames: _col0, _col1, _col2
-                      Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                      Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                       Reduce Output Operator
                         key expressions: _col0 (type: struct<writeid:bigint,bucketid:int,rowid:bigint>)
                         sort order: +
                         Map-reduce partition columns: UDFToInteger(_col0) (type: int)
-                        Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                        Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                         value expressions: _col1 (type: string), _col2 (type: string)
             Execution mode: llap
             LLAP IO: may be used (ACID table)
@@ -1031,10 +1031,10 @@ STAGE PLANS:
               Select Operator
                 expressions: KEY.reducesinkkey0 (type: struct<writeid:bigint,bucketid:int,rowid:bigint>), VALUE._col0 (type: string), VALUE._col1 (type: string)
                 outputColumnNames: _col0, _col1, _col2
-                Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                 File Output Operator
                   compressed: false
-                  Statistics: Num rows: 100 Data size: 44400 Basic stats: COMPLETE Column stats: PARTIAL
+                  Statistics: Num rows: 19 Data size: 8436 Basic stats: COMPLETE Column stats: PARTIAL
                   table:
                       input format: org.apache.hadoop.hive.ql.io.orc.OrcInputFormat
                       output format: org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat
@@ -1343,19 +1343,19 @@ STAGE PLANS:
                     Filter Vectorization:
                         className: VectorFilterOperator
                         native: true
-                        predicateExpression: FilterExprOrExpr(children: FilterLongColEqualLongScalar(col 5:int, val 413)(children: CastStringToLong(col 0:string) -> 5:int), FilterLongColEqualLongScalar(col 5:int, val 43)(children: CastStringToLong(col 0:string) -> 5:int))
+                        predicateExpression: FilterExprOrExpr(children: FilterLongColEqualLongScalar(col 5:int, val 413)(children: CastStringToLong(col 0:string) -> 5:int), FilterLongColEqualLongScalar(col 6:int, val 43)(children: CastStringToLong(col 0:string) -> 6:int))
                       Select Vectorization:
                           className: VectorSelectOperator
                           native: true
-                          projectedOutputColumnNums: [4, 0, 6, 2]
-                          selectExpressions: StringGroupColConcatStringScalar(col 1:string, val updated) -> 6:string
+                          projectedOutputColumnNums: [4, 0, 7, 2]
+                          selectExpressions: StringGroupColConcatStringScalar(col 1:string, val updated) -> 7:string
                         Reduce Sink Vectorization:
                             className: VectorReduceSinkObjectHashOperator
                             keyColumns: 4:struct<writeid:bigint,bucketid:int,rowid:bigint>
                             native: true
                             nativeConditionsMet: hive.vectorized.execution.reducesink.new.enabled IS true, hive.execution.engine tez IN [tez, spark] IS true, No PTF TopN IS true, No DISTINCT columns IS true, BinarySortableSerDe for keys IS true, LazyBinarySerDe for values IS true
                             partitionColumns: 5:int
-                            valueColumns: 0:string, 6:string, 2:string
+                            valueColumns: 0:string, 7:string, 2:string
             Execution mode: vectorized, llap
             LLAP IO: may be used (ACID table)
             Map Vectorization:
@@ -1374,7 +1374,7 @@ STAGE PLANS:
                     neededVirtualColumns: [ROWID]
                     partitionColumnCount: 2
                     partitionColumns: ds:string, hr:string
-                    scratchColumnTypeNames: [bigint, string]
+                    scratchColumnTypeNames: [bigint, bigint, string]
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Vectorization:
@@ -2193,19 +2193,19 @@ STAGE PLANS:
                     Filter Vectorization:
                         className: VectorFilterOperator
                         native: true
-                        predicateExpression: FilterExprOrExpr(children: FilterLongColEqualLongScalar(col 5:int, val 413)(children: CastStringToLong(col 0:string) -> 5:int), FilterLongColEqualLongScalar(col 5:int, val 43)(children: CastStringToLong(col 0:string) -> 5:int))
+                        predicateExpression: FilterExprOrExpr(children: FilterLongColEqualLongScalar(col 5:int, val 413)(children: CastStringToLong(col 0:string) -> 5:int), FilterLongColEqualLongScalar(col 6:int, val 43)(children: CastStringToLong(col 0:string) -> 6:int))
                       Select Vectorization:
                           className: VectorSelectOperator
                           native: true
-                          projectedOutputColumnNums: [4, 0, 6, 2]
-                          selectExpressions: StringGroupColConcatStringScalar(col 1:string, val updated) -> 6:string
+                          projectedOutputColumnNums: [4, 0, 7, 2]
+                          selectExpressions: StringGroupColConcatStringScalar(col 1:string, val updated) -> 7:string
                         Reduce Sink Vectorization:
                             className: VectorReduceSinkObjectHashOperator
                             keyColumns: 4:struct<writeid:bigint,bucketid:int,rowid:bigint>
                             native: true
                             nativeConditionsMet: hive.vectorized.execution.reducesink.new.enabled IS true, hive.execution.engine tez IN [tez, spark] IS true, No PTF TopN IS true, No DISTINCT columns IS true, BinarySortableSerDe for keys IS true, LazyBinarySerDe for values IS true
                             partitionColumns: 5:int
-                            valueColumns: 0:string, 6:string, 2:string
+                            valueColumns: 0:string, 7:string, 2:string
             Execution mode: vectorized, llap
             LLAP IO: may be used (ACID table)
             Map Vectorization:
@@ -2224,7 +2224,7 @@ STAGE PLANS:
                     neededVirtualColumns: [ROWID]
                     partitionColumnCount: 2
                     partitionColumns: ds:string, hr:string
-                    scratchColumnTypeNames: [bigint, string]
+                    scratchColumnTypeNames: [bigint, bigint, string]
         Reducer 2 
             Execution mode: vectorized, llap
             Reduce Vectorization:

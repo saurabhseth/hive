@@ -833,6 +833,13 @@ enum ResourceType {
   ARCHIVE = 3,
 }
 
+enum TxnType {
+    DEFAULT      = 0,
+    REPL_CREATED = 1,
+    READ_ONLY    = 2,
+    COMPACTION   = 3
+}
+
 struct ResourceUri {
   1: ResourceType resourceType,
   2: string       uri,
@@ -883,6 +890,7 @@ struct OpenTxnRequest {
     4: optional string agentInfo = "Unknown",
     5: optional string replPolicy,
     6: optional list<i64> replSrcTxnIds,
+    7: optional TxnType txn_type = TxnType.DEFAULT,
 }
 
 struct OpenTxnsResponse {
@@ -912,6 +920,18 @@ struct CommitTxnRequest {
 
     // An optional key/value to store atomically with the transaction
     4: optional CommitTxnKeyValue keyValue,
+
+    // Information to update the last repl id of table/partition along with commit txn (replication from 2.6 to 3.0)
+    5: optional ReplLastIdInfo replLastIdInfo,
+}
+
+struct ReplLastIdInfo {
+    1: required string database,
+    2: required i64    lastReplId,
+    3: optional string table,
+    4: optional string catalog,
+    5: optional list<string> partitionList,
+    6: optional bool needUpdateDBReplId,
 }
 
 struct WriteEventInfo {
@@ -1064,6 +1084,25 @@ struct CompactionRequest {
     6: optional map<string, string> properties
 }
 
+struct OptionalCompactionInfoStruct {
+    1: optional CompactionInfoStruct ci,
+}
+
+struct CompactionInfoStruct {
+    1: required i64 id,
+    2: required string dbname,
+    3: required string tablename,
+    4: optional string partitionname,
+    5: required CompactionType type,
+    6: optional string runas,
+    7: optional string properties
+    8: optional bool toomanyaborts
+    9: optional string state
+    10: optional string workerId
+    11: optional i64 start
+    12: optional i64 highestWriteId
+}
+
 struct CompactionResponse {
     1: required i64 id,
     2: required string state,
@@ -1123,6 +1162,7 @@ struct CreationMetadata {
 struct NotificationEventRequest {
     1: required i64 lastEvent,
     2: optional i32 maxEvents,
+    3: optional list<string> eventTypeSkipList,
 }
 
 struct NotificationEvent {
@@ -2306,6 +2346,13 @@ service ThriftHiveMetastore extends fb303.FacebookService
   CompactionResponse compact2(1:CompactionRequest rqst) 
   ShowCompactResponse show_compact(1:ShowCompactRequest rqst)
   void add_dynamic_partitions(1:AddDynamicPartitions rqst) throws (1:NoSuchTxnException o1, 2:TxnAbortedException o2)
+  OptionalCompactionInfoStruct find_next_compact(1: string workerId) throws(1:MetaException o1)
+  void update_compactor_state(1: CompactionInfoStruct cr, 2: i64 txn_id)
+  list<string> find_columns_with_stats(1: CompactionInfoStruct cr)
+  void mark_cleaned(1:CompactionInfoStruct cr) throws(1:MetaException o1)
+  void mark_compacted(1: CompactionInfoStruct cr) throws(1:MetaException o1)
+  void mark_failed(1: CompactionInfoStruct cr) throws(1:MetaException o1)
+  void set_hadoop_jobid(1: string jobId, 2: i64 cq_id)
 
   // Notification logging calls
   NotificationEventResponse get_next_notification(1:NotificationEventRequest rqst) 
@@ -2457,4 +2504,6 @@ const string TABLE_IS_TRANSACTIONAL = "transactional",
 const string TABLE_NO_AUTO_COMPACT = "no_auto_compaction",
 const string TABLE_TRANSACTIONAL_PROPERTIES = "transactional_properties",
 const string TABLE_BUCKETING_VERSION = "bucketing_version",
+const string DRUID_CONFIG_PREFIX = "druid.",
+const string JDBC_CONFIG_PREFIX = "hive.sql.",
 

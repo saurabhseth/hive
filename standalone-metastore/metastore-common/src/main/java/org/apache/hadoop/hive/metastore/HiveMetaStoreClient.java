@@ -277,8 +277,28 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   }
 
   private void resolveUris() throws MetaException {
-    String metastoreUrisString[] =  MetastoreConf.getVar(conf,
-            ConfVars.THRIFT_URIS).split(",");
+    String thriftUris = MetastoreConf.getVar(conf, ConfVars.THRIFT_URIS);
+    String serviceDiscoveryMode = MetastoreConf.getVar(conf, ConfVars.THRIFT_SERVICE_DISCOVERY_MODE);
+    List<String> metastoreUrisString = null;
+
+    // The metastore URIs can come from THRIFT_URIS directly or need to be fetched from the
+    // Zookeeper
+    try {
+      if (serviceDiscoveryMode == null || serviceDiscoveryMode.trim().isEmpty()) {
+        metastoreUrisString = Arrays.asList(thriftUris.split(","));
+      } else if (serviceDiscoveryMode.equalsIgnoreCase("zookeeper")) {
+          metastoreUrisString = new ArrayList<String>();
+          // Add scheme to the bare URI we get.
+          for (String s : MetastoreConf.getZKConfig(conf).getServerUris()) {
+            metastoreUrisString.add("thrift://" + s);
+          }
+      } else {
+        throw new IllegalArgumentException("Invalid metastore dynamic service discovery mode " +
+                serviceDiscoveryMode);
+      }
+    } catch (Exception e) {
+      MetaStoreUtils.logAndThrowMetaException(e);
+    }
 
     List<URI> metastoreURIArray = new ArrayList<URI>();
     try {
@@ -2774,7 +2794,13 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
 
   @Override
   public long openTxn(String user) throws TException {
-    OpenTxnsResponse txns = openTxnsIntr(user, 1, null, null);
+    OpenTxnsResponse txns = openTxnsIntr(user, 1, null, null, null);
+    return txns.getTxn_ids().get(0);
+  }
+
+  @Override
+  public long openTxn(String user, TxnType txnType) throws TException {
+    OpenTxnsResponse txns = openTxnsIntr(user, 1, null, null, txnType);
     return txns.getTxn_ids().get(0);
   }
 
@@ -2782,17 +2808,17 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   public List<Long> replOpenTxn(String replPolicy, List<Long> srcTxnIds, String user) throws TException {
     // As this is called from replication task, the user is the user who has fired the repl command.
     // This is required for standalone metastore authentication.
-    OpenTxnsResponse txns = openTxnsIntr(user, srcTxnIds.size(), replPolicy, srcTxnIds);
+    OpenTxnsResponse txns = openTxnsIntr(user, srcTxnIds != null ? srcTxnIds.size() : 1, replPolicy, srcTxnIds, null);
     return txns.getTxn_ids();
   }
 
   @Override
   public OpenTxnsResponse openTxns(String user, int numTxns) throws TException {
-    return openTxnsIntr(user, numTxns, null, null);
+    return openTxnsIntr(user, numTxns, null, null, null);
   }
 
   private OpenTxnsResponse openTxnsIntr(String user, int numTxns, String replPolicy,
-                                        List<Long> srcTxnIds) throws TException {
+                                        List<Long> srcTxnIds, TxnType txnType) throws TException {
     String hostname;
     try {
       hostname = InetAddress.getLocalHost().getHostName();
@@ -2809,6 +2835,9 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
       rqst.setReplSrcTxnIds(srcTxnIds);
     } else {
       assert srcTxnIds == null;
+    }
+    if(txnType != null) {
+      rqst.setTxn_type(txnType);
     }
     return client.open_txns(rqst);
   }
@@ -3680,5 +3709,40 @@ public class HiveMetaStoreClient implements IMetaStoreClient, AutoCloseable {
   public GetPartitionsResponse getPartitionsWithSpecs(GetPartitionsRequest request)
       throws TException {
     return client.get_partitions_with_specs(request);
+  }
+
+  @Override
+  public OptionalCompactionInfoStruct findNextCompact(String workerId) throws MetaException, TException {
+    return client.find_next_compact(workerId);
+  }
+
+  @Override
+  public void updateCompactorState(CompactionInfoStruct cr, long txnId) throws TException {
+    client.update_compactor_state(cr, txnId);
+  }
+
+  @Override
+  public List<String> findColumnsWithStats(CompactionInfoStruct cr) throws TException {
+    return client.find_columns_with_stats(cr);
+  }
+
+  @Override
+  public void markCleaned(CompactionInfoStruct cr) throws MetaException, TException {
+    client.mark_cleaned(cr);
+  }
+
+  @Override
+  public void markCompacted(CompactionInfoStruct cr) throws MetaException, TException {
+    client.mark_compacted(cr);
+  }
+
+  @Override
+  public void markFailed(CompactionInfoStruct cr) throws MetaException, TException {
+    client.mark_failed(cr);
+  }
+
+  @Override
+  public void setHadoopJobid(String jobId, long cqId) throws MetaException, TException {
+    client.set_hadoop_jobid(jobId, cqId);
   }
 }
